@@ -40,6 +40,7 @@ def compile(
     verbose: bool = False,
     pass_configs: Optional[Dict[str, Any]] = None,
     compile_flags: Optional[Union[List[str], str]] = None,
+    skip_hardware_check: bool = False,
 ) -> JITKernel:
     """
     Compile the given TileLang PrimFunc with TVM and build a JITKernel.
@@ -67,13 +68,17 @@ def compile(
             "tl.disable_dynamic_tail_split": bool, default: False
             "tl.dynamic_vectorize_size_bits": int, default: 128
             "tl.disable_safe_memory_legalize": bool, default: False
+    skip_hardware_check : bool, optional
+        If True, skip hardware availability checks. This allows compilation to source/binary
+        without requiring GPU hardware. Useful for cross-compilation or code generation 
+        without execution. (default: False).
     """
     assert isinstance(func, PrimFunc), f"target function must be a PrimFunc but got {type(func)}"
     if isinstance(compile_flags, str):
         compile_flags = [compile_flags]
 
     # This path is not a performance critical path, so we can afford to convert the target.
-    target = Target(determine_target(target))
+    target = Target(determine_target(target, skip_hardware_check=skip_hardware_check))
 
     if is_metal_target(target):
         assert execution_backend == 'torch', 'Currently metal target only support `tl.jit(execution_backend="torch")`'
@@ -100,6 +105,7 @@ class _JitImplementation:
     pass_configs: Optional[Dict[str, Any]]
     debug_root_path: Optional[str]
     compile_flags: Optional[Union[List[str], str]]
+    skip_hardware_check: bool
 
     def __init__(self,
                  out_idx: Any = None,
@@ -109,7 +115,8 @@ class _JitImplementation:
                  verbose: bool = False,
                  pass_configs: Optional[Dict[str, Any]] = None,
                  debug_root_path: Optional[str] = None,
-                 compile_flags: Optional[Union[List[str], str]] = None):
+                 compile_flags: Optional[Union[List[str], str]] = None,
+                 skip_hardware_check: bool = False):
         """
         Initializes the JIT compiler decorator.
 
@@ -144,6 +151,10 @@ class _JitImplementation:
         compile_flags : Optional[Union[List[str], str]], optional
             Additional compilation flags to pass to the compiler.
             If None, no additional compilation flags are passed (default: None).
+        skip_hardware_check : bool, optional
+            If True, skip hardware availability checks. This allows compilation to source/binary
+            without requiring GPU hardware. Useful for cross-compilation or code generation 
+            without execution. (default: False).
         """
         self.out_idx = out_idx
         self.execution_backend = execution_backend
@@ -152,6 +163,7 @@ class _JitImplementation:
         self.verbose = verbose
         self.pass_configs = pass_configs
         self.compile_flags = compile_flags
+        self.skip_hardware_check = skip_hardware_check
 
         # Corrected debug_root_path handling
         self.debug_root_path = debug_root_path
@@ -222,6 +234,7 @@ class _JitImplementation:
                     verbose=self.verbose,
                     pass_configs=self.pass_configs,
                     compile_flags=self.compile_flags,
+                    skip_hardware_check=self.skip_hardware_check,
                 )
 
                 if self.debug_root_path:
@@ -251,7 +264,8 @@ def jit(  # This is the new public interface
         verbose: bool = False,
         pass_configs: Optional[Dict[str, Any]] = None,
         debug_root_path: Optional[str] = None,
-        compile_flags: Optional[Union[List[str], str]] = None):
+        compile_flags: Optional[Union[List[str], str]] = None,
+        skip_hardware_check: bool = False):
     """
     Just-In-Time (JIT) compiler decorator for TileLang functions.
 
@@ -276,6 +290,12 @@ def jit(  # This is the new public interface
         Configurations for TVM's pass context. Defaults to None.
     debug_root_path : Optional[str], optional
         Directory to save compiled kernel source for debugging. Defaults to None.
+    compile_flags : Optional[Union[List[str], str]], optional
+        Additional compilation flags to pass to the compiler. Defaults to None.
+    skip_hardware_check : bool, optional
+        If True, skip hardware availability checks. This allows compilation to source/binary
+        without requiring GPU hardware. Useful for cross-compilation or code generation 
+        without execution. Defaults to False.
 
     Returns
     -------
@@ -297,7 +317,8 @@ def jit(  # This is the new public interface
             verbose=verbose,
             pass_configs=pass_configs,
             debug_root_path=debug_root_path,
-            compile_flags=compile_flags)
+            compile_flags=compile_flags,
+            skip_hardware_check=skip_hardware_check)
         return default_decorator(func)
     elif isinstance(func, PrimFunc):
         raise ValueError("Use tilelang.jit to decorate prim_func is not supported yet.")
@@ -313,5 +334,6 @@ def jit(  # This is the new public interface
             verbose=verbose,
             pass_configs=pass_configs,
             debug_root_path=debug_root_path,
-            compile_flags=compile_flags)
+            compile_flags=compile_flags,
+            skip_hardware_check=skip_hardware_check)
         return configured_decorator
