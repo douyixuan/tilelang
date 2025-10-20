@@ -52,7 +52,8 @@ def check_metal_availability() -> bool:
 
 
 def determine_target(target: Union[str, Target, Literal["auto"]] = "auto",
-                     return_object: bool = False) -> Union[str, Target]:
+                     return_object: bool = False,
+                     skip_hardware_check: bool = False) -> Union[str, Target]:
     """
     Determine the appropriate target for compilation (CUDA, HIP, or manual selection).
 
@@ -60,12 +61,16 @@ def determine_target(target: Union[str, Target, Literal["auto"]] = "auto",
         target (Union[str, Target, Literal["auto"]]): User-specified target.
             - If "auto", the system will automatically detect whether CUDA or HIP is available.
             - If a string or Target, it is directly validated.
+        return_object (bool): If True, return a Target object instead of a string.
+        skip_hardware_check (bool): If True, skip hardware availability checks. This allows
+            compilation to source/binary without requiring GPU hardware. Useful for
+            cross-compilation or code generation without execution. Default is False.
 
     Returns:
         Union[str, Target]: The selected target ("cuda", "hip", or a valid Target object).
 
     Raises:
-        ValueError: If no CUDA or HIP is available and the target is "auto".
+        ValueError: If no CUDA or HIP is available and the target is "auto" (when skip_hardware_check is False).
         AssertionError: If the target is invalid.
     """
 
@@ -76,8 +81,8 @@ def determine_target(target: Union[str, Target, Literal["auto"]] = "auto",
         if target is not None:
             return target
         # Check for CUDA and HIP availability
-        is_cuda_available = check_cuda_availability()
-        is_hip_available = check_hip_availability()
+        is_cuda_available = check_cuda_availability() if not skip_hardware_check else False
+        is_hip_available = check_hip_availability() if not skip_hardware_check else False
 
         # Determine the target based on availability
         if is_cuda_available:
@@ -87,7 +92,12 @@ def determine_target(target: Union[str, Target, Literal["auto"]] = "auto",
         elif check_metal_availability():
             return_var = "metal"
         else:
-            raise ValueError("No CUDA or HIP or MPS available on this system.")
+            if skip_hardware_check:
+                # When skip_hardware_check is True and no hardware is detected,
+                # default to CUDA for code generation
+                return_var = "cuda"
+            else:
+                raise ValueError("No CUDA or HIP or MPS available on this system.")
     else:
         # Validate the target if it's not "auto"
         assert isinstance(
